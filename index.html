@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="slides-format" content="viewport">
+  <title>少数言語・方言をめぐるAIの開発・実装動向</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Literata:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-bg: #FEFCF8;
+      --color-bg-deep: #F6F0E6;
+      --color-surface: #F3ECE0;
+      --color-text: #1E293B;
+      --color-text-secondary: #475569;
+      --color-text-muted: #64748B;
+      --color-accent-1: #C2410C;
+      --color-accent-2: #1E293B;
+      --color-accent-3: #65713A;
+      --color-glass-bg: rgba(255,255,255,0.88);
+      --color-glass-border: rgba(30,41,59,0.08);
+      --color-vignette: rgba(0,0,0,0.06);
+      --font-display: 'Literata', serif;
+      --font-body: 'Source Sans 3', sans-serif;
+    }
+  </style>
+  <style>
+    :root { --color-bg: #FEFCF8; --color-text: #1E293B; --glow-color-rgb: 194,65,12; --color-glass-bg: rgba(255,255,255,0.88); --color-glass-border: rgba(30,41,59,0.08); }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { background: var(--color-bg); margin: 0; }
+    body { font-family: var(--font-body); color: var(--color-text); overflow: hidden; height: 100vh; width: 100vw; }
+    .deck { width: 100vw; height: 100vh; position: relative; }
+    .slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--color-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: scale(0.97); transition: opacity 0.7s ease, transform 0.7s ease; pointer-events: none; overflow: hidden; }
+    .slide.active { opacity: 1; transform: scale(1); pointer-events: all; }
+    .slide > .content { position: relative; z-index: 2; width: 100%; max-width: 1180px; padding: clamp(1.3rem, 3.6vw, 3.2rem); }
+    .nav-controls { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; z-index: 100; background: rgba(255,255,255,0.76); backdrop-filter: blur(10px); padding: 10px 20px; border-radius: 40px; border: 1px solid var(--color-glass-border); }
+    .nav-btn { width: 38px; height: 38px; border: none; background: rgba(255,255,255,0.9); color: var(--color-accent-1); border-radius: 50%; font-size: 1.1rem; cursor: pointer; }
+    .slide-dots { display: flex; gap: 8px; }
+    .slide-dots .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(30,41,59,0.18); cursor: pointer; transition: all 0.3s; }
+    .slide-dots .dot.active { background: var(--color-accent-1); transform: scale(1.25); }
+    .slide-counter { font-size: 0.8rem; color: var(--color-text-muted); min-width: 42px; text-align: center; }
+    .reveal { opacity: 0; transform: translateY(20px); }
+    .gradient-mesh { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+    .blob { position: absolute; border-radius: 50%; filter: blur(70px); animation: float-slow 14s ease-in-out infinite; }
+    .blob:nth-child(2) { animation-duration: 18s; }
+    .blob:nth-child(3) { animation-duration: 22s; }
+    .slide::before { content:''; position:absolute; inset:0; z-index:1; pointer-events:none; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"); opacity:0.02; }
+    .slide::after { content:''; position:absolute; inset:0; z-index:1; pointer-events:none; background: radial-gradient(ellipse at center, transparent 56%, var(--color-vignette) 100%); }
+    .text-glow { text-shadow: 0 0 12px rgba(var(--glow-color-rgb),0.18); }
+    .card { background: var(--color-glass-bg); border: 1px solid var(--color-glass-border); border-radius: 24px; box-shadow: 0 10px 25px rgba(30,41,59,0.06); }
+    .metric { border-left: 5px solid var(--color-accent-1); }
+    .bar-track { height: 18px; border-radius: 999px; background: rgba(30,41,59,0.08); overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--color-accent-1), #E88D56); width: 0%; }
+    .deco-shape { position:absolute; border-radius:999px; opacity:0.08; z-index:1; pointer-events:none; }
+    .matrix { display:grid; grid-template-columns: 1.3fr 1fr 1fr; gap:10px; }
+    .matrix > div { padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,0.88); border:1px solid rgba(30,41,59,0.08); font-size: 0.95rem; }
+    .small { font-size:0.92rem; line-height:1.35; }
+    @keyframes float-slow { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(35px,-28px) scale(1.08)} }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; } }
+  </style>
+</head>
+<body>
+<div class="mouse-spotlight" style="position:fixed;inset:0;z-index:99;pointer-events:none;"></div>
+<div class="deck">
+
+  <div class="slide active" data-slide="1">
+    <div class="gradient-mesh">
+      <div class="blob" style="width:420px;height:420px;top:-90px;right:-90px;background:#C2410C;opacity:.16"></div>
+      <div class="blob" style="width:300px;height:300px;bottom:-60px;left:-40px;background:#65713A;opacity:.12"></div>
+      <div class="blob" style="width:220px;height:220px;top:36%;left:16%;background:#1E293B;opacity:.08"></div>
+    </div>
+    <canvas class="particle-canvas" style="position:absolute;inset:0;z-index:1"></canvas>
+    <div class="content text-center">
+      <div class="text-[110px] mb-5 animate-[float_3s_ease-in-out_infinite] reveal">🗣️</div>
+      <h1 class="font-display text-[clamp(2.4rem,5.6vw,4.7rem)] font-extrabold tracking-tight mb-5 bg-linear-to-br from-accent-1 via-accent-2 to-accent-3 bg-clip-text text-transparent reveal">少数言語・方言をめぐるAIの<br>開発・実装動向</h1>
+      <p class="text-[clamp(0.9rem,1.5vw,1.2rem)] uppercase tracking-[4px] text-text-muted mb-3 reveal">国内外の事例整理</p>
+      <p class="text-lg text-text-secondary reveal">宮川創（筑波大学）／日本言語学会ワークショップ用スライド</p>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="2">
+    <div class="gradient-mesh"><div class="blob" style="width:340px;height:340px;top:-70px;right:-60px;background:#C2410C;opacity:.08"></div><div class="blob" style="width:240px;height:240px;bottom:-50px;left:-30px;background:#65713A;opacity:.07"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-8 reveal">発表の見取り図</h2>
+      <div class="grid grid-cols-2 gap-6">
+        <div class="card p-6 reveal"><div class="text-accent-1 font-bold text-xl mb-2">1. 言語記述・記録</div><div class="small text-text-secondary">デジタルツールとアーカイブを通じて、記録資料をAI利用可能な形へ近づける。</div></div>
+        <div class="card p-6 reveal"><div class="text-accent-1 font-bold text-xl mb-2">2. 多言語AI技術</div><div class="small text-text-secondary">音声合成・音声認識・機械翻訳の開発動向と、個別言語への実装事例を整理する。</div></div>
+        <div class="card p-6 reveal"><div class="text-accent-1 font-bold text-xl mb-2">3. LLM・RAG</div><div class="small text-text-secondary">少数言語への適用可能性と限界、既存資源を参照するRAGの位置づけを考える。</div></div>
+        <div class="card p-6 reveal"><div class="text-accent-1 font-bold text-xl mb-2">4. 倫理的課題</div><div class="small text-text-secondary">話者・遺族の権利、学習機会、大言語の影響、コミュニティ主導との接続。</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="3">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-80px;right:-70px;background:#1E293B;opacity:.07"></div><div class="blob" style="width:240px;height:240px;bottom:-40px;left:-20px;background:#C2410C;opacity:.08"></div></div>
+    <div class="content">
+      <div class="grid grid-cols-[1.1fr_0.9fr] gap-8 items-center">
+        <div>
+          <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-5 reveal">なぜ今、少数言語AIか</h2>
+          <div class="space-y-4">
+            <div class="card metric p-5 reveal"><div class="text-4xl font-bold text-glow mb-1">約7,000</div><div class="text-text-secondary">現在、地球上で話される言語数</div></div>
+            <div class="card metric p-5 reveal"><div class="text-4xl font-bold text-glow mb-1">44% / 3,193</div><div class="text-text-secondary">何らかのレベルで危機に瀕する言語</div></div>
+            <div class="card metric p-5 reveal"><div class="text-4xl font-bold text-glow mb-1">1,431 / 110</div><div class="text-text-secondary">話者1,000人未満 / 10人未満の言語</div></div>
+          </div>
+        </div>
+        <div class="card p-8 reveal">
+          <div class="text-sm uppercase tracking-[3px] text-text-muted mb-3">発表の立場</div>
+          <p class="text-[1.15rem] leading-relaxed text-text-secondary">AI・NLP・DH は、不可逆的な言語多様性の喪失に対する一つの補助線になりうる。他方で、現在主流の生成AIは大規模データを前提とするため、低リソース言語・方言で高精度システムを構築すること自体が難題である。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="4">
+    <div class="gradient-mesh"><div class="blob" style="width:330px;height:330px;top:-60px;right:-50px;background:#65713A;opacity:.09"></div><div class="blob" style="width:220px;height:220px;bottom:-30px;left:-10px;background:#C2410C;opacity:.06"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-7 reveal">言語記述のためのデジタルツール</h2>
+      <div class="grid grid-cols-4 gap-4">
+        <div class="card p-5 reveal"><div class="text-3xl mb-3">🧰</div><div class="font-bold text-xl mb-2">ELAN</div><div class="small text-text-secondary">時系列注釈の標準。談話・音声の整列と再利用の出発点。<br><a href="https://archive.mpi.nl/tla/elan" style="color:#C2410C;text-decoration:underline;">公式サイト</a></div></div>
+        <div class="card p-5 reveal"><div class="text-3xl mb-3">📚</div><div class="font-bold text-xl mb-2">FLEx</div><div class="small text-text-secondary">語彙・形態素解析・コーパスを統合管理し、資源化を進める。<br><a href="https://software.sil.org/fieldworks/" style="color:#C2410C;text-decoration:underline;">公式サイト</a></div></div>
+        <div class="card p-5 reveal"><div class="text-3xl mb-3">🏷️</div><div class="font-bold text-xl mb-2">自動グロス</div><div class="small text-text-secondary">形態素分割・グロス付与の半自動化は、検索・学習・評価に使える単位化を後押しする。</div></div>
+        <div class="card p-5 reveal"><div class="text-3xl mb-3">🗄️</div><div class="font-bold text-xl mb-2">アーカイブ群</div><div class="small text-text-secondary">ELAR、Pangloss、PARADISEC が保存・公開・DOI付与を担う。</div></div>
+      </div>
+      <div class="card p-5 mt-6 reveal"><p class="text-text-secondary text-[1.05rem]">下地（2025）のELAN談話データ切り出しツールや、自動グロスのような半自動処理は、記録資料を「読む」だけでなく、検索・抽出・学習・評価に使える単位へ分解する補助線になる。</p></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="5">
+    <div class="gradient-mesh"><div class="blob" style="width:350px;height:350px;top:-70px;right:-60px;background:#C2410C;opacity:.08"></div><div class="blob" style="width:260px;height:260px;bottom:-40px;left:-20px;background:#1E293B;opacity:.06"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-7 reveal">多言語AI技術の開発動向</h2>
+      <div class="grid grid-cols-[0.95fr_1.05fr] gap-8 items-center">
+        <div class="space-y-4">
+          <div class="card p-5 reveal"><div class="text-4xl font-bold text-accent-1 mb-1">1,100+</div><div class="text-text-secondary">Meta MMS が提供する ASR・TTS 対応言語規模</div></div>
+          <div class="card p-5 reveal"><div class="text-4xl font-bold text-accent-1 mb-1">300+</div><div class="text-text-secondary">Google USM が扱う言語規模</div></div>
+          <div class="card p-5 reveal"><div class="text-4xl font-bold text-accent-1 mb-1">40時間</div><div class="text-text-secondary">アイヌ語ASR研究で用いられた音声データ規模の目安</div></div>
+        </div>
+        <div class="card p-7 reveal">
+          <div class="space-y-3 text-[1.01rem] text-text-secondary">
+            <p>Meta MMS は 1,100以上の言語に ASR・TTS を、Google USM は 300以上の言語に対応する音声モデルを展開する。</p>
+            <p>個別事例として、Te Hiku Media、ABAIR、GiellaLT、アイヌ語 ASR、日琉諸方言 TTS などが並行して進んでいる。</p>
+            <p>リンク：<a href="https://github.com/tehikumedia" style="color:#C2410C;text-decoration:underline;">Te Hiku Media</a> ／ <a href="https://www.abair.ie" style="color:#C2410C;text-decoration:underline;">ABAIR</a> ／ <a href="https://giellalt.github.io" style="color:#C2410C;text-decoration:underline;">GiellaLT</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="6">
+    <div class="gradient-mesh"><div class="blob" style="width:340px;height:340px;top:-50px;right:-50px;background:#65713A;opacity:.08"></div><div class="blob" style="width:240px;height:240px;bottom:-30px;left:-10px;background:#C2410C;opacity:.06"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-7 reveal">アーカイブ：保存から再利用へ</h2>
+      <div class="grid grid-cols-3 gap-5">
+        <div class="card p-6 reveal"><div class="text-3xl font-bold text-accent-1 mb-2">ELAR</div><div class="small text-text-secondary">70か国以上・550以上のデポジットを擁する。<br><a href="https://www.elar-archive.org" style="color:#C2410C;text-decoration:underline;">公式サイト</a></div></div>
+        <div class="card p-6 reveal"><div class="text-3xl font-bold text-accent-1 mb-2">Pangloss</div><div class="small text-text-secondary">258言語・1,200時間超の録音資料を DOI 付きで公開。<br><a href="https://pangloss.cnrs.fr" style="color:#C2410C;text-decoration:underline;">公式サイト</a></div></div>
+        <div class="card p-6 reveal"><div class="text-3xl font-bold text-accent-1 mb-2">PARADISEC</div><div class="small text-text-secondary">太平洋地域のアナログ媒体を緊急デジタル化。<br><a href="https://www.paradisec.org.au" style="color:#C2410C;text-decoration:underline;">公式サイト</a></div></div>
+      </div>
+      <div class="card p-6 mt-6 reveal">
+        <p class="text-[1.05rem] text-text-secondary">2018年ブラジル国立博物館火災は、単一拠点保存ではなく、<span class="font-bold text-accent-1">構造化・識別子付与・分散保存</span>によって資料を未来の研究資源として守る必要を示した。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="7">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-70px;right:-50px;background:#1E293B;opacity:.08"></div><div class="blob" style="width:220px;height:220px;bottom:-30px;left:-10px;background:#65713A;opacity:.08"></div></div>
+    <canvas class="particle-canvas-ambient" style="position:absolute;inset:0;z-index:1"></canvas>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-7 reveal">機械翻訳：拡張と協働の二つの方向</h2>
+      <div class="grid grid-cols-2 gap-6">
+        <div class="card p-6 reveal"><div class="font-bold text-2xl mb-2">Google 翻訳</div><div class="small text-text-secondary">2022年にゼロショット機械翻訳で24言語を追加し、ミゾ語・リンガラ語・ケチュア語・グアラニー語などを一括拡張。</div></div>
+        <div class="card p-6 reveal"><div class="font-bold text-2xl mb-2">NLLB-200</div><div class="small text-text-secondary">200言語間の直接翻訳を実現し、FLORES-200で平均44%のBLEU向上を報告。</div></div>
+        <div class="card p-6 reveal"><div class="font-bold text-2xl mb-2">Masakhane</div><div class="small text-text-secondary">アフリカ諸語のオープンソースモデルを話者主導のデータ構築とともに推進。</div></div>
+        <div class="card p-6 reveal"><div class="font-bold text-2xl mb-2">AmericasNLP</div><div class="small text-text-secondary">先住民言語 MT の共有タスクを ACL 併設で継続し、評価と協働の場を形成。<br><a href="https://www.AmericasNLP.org" style="color:#C2410C;text-decoration:underline;">公式サイト</a></div></div>
+      </div>
+      <div class="card p-6 mt-6 reveal"><p class="text-text-secondary text-[1.02rem]">整理の軸は、<span class="font-bold text-accent-1">どこまで拡張できるか、低資源でもどこまで品質を保てるか、誰がデータを作り評価するか</span>である。</p></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="8">
+    <div class="gradient-mesh"><div class="blob" style="width:350px;height:350px;top:-60px;right:-40px;background:#C2410C;opacity:.08"></div><div class="blob" style="width:250px;height:250px;bottom:-30px;left:-20px;background:#65713A;opacity:.06"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-7 reveal">LLM単体の限界</h2>
+      <div class="grid grid-cols-[0.95fr_1.05fr] gap-8 items-center">
+        <div class="card p-6 reveal">
+          <div class="text-sm uppercase tracking-[3px] text-text-muted mb-3">FormosanBench の示唆</div>
+          <ul class="space-y-3 text-[1.02rem] text-text-secondary">
+            <li>・台湾先住民諸語を対象に、MT・ASR・要約で包括評価。</li>
+            <li>・ゼロショットでもファインチューニングでも性能は低調。</li>
+            <li>・事前学習データの偏りと、言語固有の形態統語の複雑さが障害。</li>
+          </ul>
+        </div>
+        <div>
+          <div class="card p-6 mb-4 reveal"><div class="text-2xl font-bold text-accent-1 mb-2">大規模 ≠ 万能</div><div class="small text-text-secondary">高資源言語で強いモデルでも、危機言語では入力・語彙・文法・評価資源の不足がボトルネックになる。</div></div>
+          <div class="card p-6 reveal"><div class="text-2xl font-bold text-accent-1 mb-2">日本語も相対的には不利</div><div class="small text-text-secondary">WS全体の文脈では、日本語でさえ英語比で性能低下の可能性があり、方言・少数言語ではさらに厳しい。</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="9">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-80px;right:-60px;background:#65713A;opacity:.09"></div><div class="blob" style="width:230px;height:230px;bottom:-30px;left:-20px;background:#C2410C;opacity:.06"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-7 reveal">RAGはなぜ有望か</h2>
+      <div class="grid grid-cols-2 gap-6 mb-6">
+        <div class="card p-6 reveal"><div class="text-3xl mb-3">🔎</div><div class="font-bold text-xl mb-2">既存資源を検索する</div><div class="small text-text-secondary">辞書・注釈コーパス・対訳文を外部知識として参照し、モデル本体を変えずに出力を補う。</div></div>
+        <div class="card p-6 reveal"><div class="text-3xl mb-3">🧩</div><div class="font-bold text-xl mb-2">低資源言語に親和的</div><div class="small text-text-secondary">大規模事前学習データがなくても、既存の小規模資源を活かせる。</div></div>
+      </div>
+      <div class="grid grid-cols-3 gap-5">
+        <div class="card p-5 reveal"><div class="font-bold mb-2">チェロキー語など</div><div class="small text-text-secondary">Shu ほかにより、低資源翻訳で精度改善が報告。</div></div>
+        <div class="card p-5 reveal"><div class="font-bold mb-2">THOTH AI</div><div class="small text-text-secondary">コプト語で、語彙知識ベースRAGによりベースモデル比で約9 BLEU向上。</div></div>
+        <div class="card p-5 reveal"><div class="font-bold mb-2">与論方言</div><div class="small text-text-secondary">文節対訳9,007ペアを使うRAGで BLEU 45.6、ベースモデル比 +9.9。</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="10">
+    <div class="gradient-mesh"><div class="blob" style="width:340px;height:340px;top:-60px;right:-40px;background:#1E293B;opacity:.07"></div><div class="blob" style="width:230px;height:230px;bottom:-30px;left:-20px;background:#C2410C;opacity:.07"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-8 reveal">RAG：低資源言語への実装上の迂回路</h2>
+      <div class="matrix reveal">
+        <div class="font-bold bg-[rgba(194,65,12,0.08)]">段階</div><div class="font-bold bg-[rgba(194,65,12,0.08)]">内容</div><div class="font-bold bg-[rgba(194,65,12,0.08)]">含意</div>
+        <div>入力</div><div>質問・文・翻訳要求</div><div>低資源でも開始できる</div>
+        <div>検索</div><div>辞書・注釈済みコーパス・対訳・例文を参照</div><div>既存資源を動的に利用</div>
+        <div>知識ベース</div><div>語彙集・文節対訳・グロス資料</div><div>出力の根拠を追跡可能</div>
+        <div>LLM</div><div>検索結果を文脈として生成・翻訳・要約</div><div>パラメータ変更が不要</div>
+        <div>出力</div><div>翻訳・応答・要約</div><div>大規模コーパスなしでも改善可能</div>
+      </div>
+      <div class="card p-6 mt-6 reveal"><p class="text-text-secondary text-[1.02rem]">コプト語 THOTH AI では総合コプト語語彙集を知識ベースにした RAG で約9 BLEU向上、与論方言では 9,007 文節対訳を用いた Yunnufutuba が BLEU 45.6、ベースモデル比 +9.9 を達成した。<br><a href="https://somiyagawa.com/thoth" style="color:#C2410C;text-decoration:underline;">THOTH AI</a> ／ <a href="https://aclanthology.org/2025.nlp4dh-1.4/" style="color:#C2410C;text-decoration:underline;">関連論文</a> ／ <a href="https://www.AmericasNLP.org" style="color:#C2410C;text-decoration:underline;">AmericasNLP</a></p></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="11">
+    <div class="gradient-mesh"><div class="blob" style="width:350px;height:350px;top:-70px;right:-50px;background:#C2410C;opacity:.08"></div><div class="blob" style="width:250px;height:250px;bottom:-30px;left:-20px;background:#65713A;opacity:.06"></div></div>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-8 reveal">倫理的課題</h2>
+      <div class="grid grid-cols-3 gap-5">
+        <div class="card p-6 reveal"><div class="text-3xl mb-3">⚠️</div><div class="font-bold text-xl mb-2">フェイク音声</div><div class="small text-text-secondary">音声合成は、話者や遺族の人格権・著作権を侵害しうる。</div></div>
+        <div class="card p-6 reveal"><div class="text-3xl mb-3">🎓</div><div class="font-bold text-xl mb-2">学習機会の代替</div><div class="small text-text-secondary">機械が学習者のディクテーションや記述の機会を奪うおそれがある。</div></div>
+        <div class="card p-6 reveal"><div class="text-3xl mb-3">🌐</div><div class="font-bold text-xl mb-2">大言語の影響増幅</div><div class="small text-text-secondary">日本語由来の直訳表現が自動的に増え、少数言語の自然さを損ねる可能性。</div></div>
+      </div>
+      <div class="card p-6 mt-6 reveal"><p class="text-[1.05rem] text-text-secondary">重要なのは、「<span class="font-bold text-accent-1">人間がやるべきことは人間がやる、機械がやるべきことは機械がやる</span>」という分業原則を、開発の初期段階から明示すること。</p></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="12">
+    <div class="gradient-mesh"><div class="blob" style="width:360px;height:360px;top:-80px;right:-60px;background:#65713A;opacity:.08"></div><div class="blob" style="width:240px;height:240px;bottom:-30px;left:-20px;background:#1E293B;opacity:.06"></div></div>
+    <canvas class="particle-canvas-ambient" style="position:absolute;inset:0;z-index:1"></canvas>
+    <div class="content">
+      <h2 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold mb-8 reveal">言語復興につながる条件</h2>
+      <div class="grid grid-cols-[1fr_1fr] gap-6">
+        <div class="card p-6 reveal">
+          <div class="text-sm uppercase tracking-[3px] text-text-muted mb-3">デジタルの役割</div>
+          <ul class="space-y-3 text-[1.02rem] text-text-secondary">
+            <li>・関心喚起、教材化、音声アクセス、翻訳補助</li>
+            <li>・会議の書き起こし、検索、要約</li>
+            <li>・入力・出力の使用域拡張</li>
+          </ul>
+        </div>
+        <div class="card p-6 reveal">
+          <div class="text-sm uppercase tracking-[3px] text-text-muted mb-3">不可欠な前提</div>
+          <ul class="space-y-3 text-[1.02rem] text-text-secondary">
+            <li>・イマージョン教育と地域学校での活用</li>
+            <li>・家庭・地域での継続的使用</li>
+            <li>・コミュニティ主導のデータ構築と監修</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card p-6 mt-6 reveal"><p class="text-[1.05rem] text-text-secondary">Duolingo や各種アプリは入口にはなるが、<span class="font-bold text-accent-1">真の復興はコミュニティ活動への接続</span>なしには成立しない。</p></div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="13">
+    <div class="gradient-mesh"><div class="blob" style="width:400px;height:400px;top:-90px;right:-70px;background:#C2410C;opacity:.15"></div><div class="blob" style="width:280px;height:280px;bottom:-50px;left:-30px;background:#65713A;opacity:.11"></div><div class="blob" style="width:180px;height:180px;top:42%;left:18%;background:#1E293B;opacity:.08"></div></div>
+    <canvas class="particle-canvas" style="position:absolute;inset:0;z-index:1"></canvas>
+    <div class="content text-center">
+      <div class="text-[104px] mb-4 animate-[float_3s_ease-in-out_infinite] reveal">🌱</div>
+      <h2 class="font-display text-[clamp(2.3rem,5vw,4.2rem)] font-extrabold tracking-tight mb-4 bg-linear-to-br from-accent-2 via-accent-1 to-accent-3 bg-clip-text text-transparent reveal">今後の方向性</h2>
+      <p class="text-[1.15rem] text-text-secondary max-w-[900px] mx-auto leading-relaxed mb-5 reveal">RAG用知識ベースの整備、コミュニティ主導のデータ構築、権利と公開範囲の明確化を組み合わせた統合的アプローチが、危機言語NLPの主要方向性となる。</p>
+      <div class="grid grid-cols-3 gap-5 mt-6">
+        <div class="card p-5 reveal"><div class="font-bold text-accent-1 mb-1">記録</div><div class="small text-text-secondary">まず残す</div></div>
+        <div class="card p-5 reveal"><div class="font-bold text-accent-1 mb-1">実装</div><div class="small text-text-secondary">使える形にする</div></div>
+        <div class="card p-5 reveal"><div class="font-bold text-accent-1 mb-1">継承</div><div class="small text-text-secondary">地域へ返す</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<div class="nav-controls">
+  <button class="nav-btn" aria-label="Previous slide" onclick="changeSlide(-1)">&#8249;</button>
+  <div class="slide-dots" id="dots"></div>
+  <button class="nav-btn" aria-label="Next slide" onclick="changeSlide(1)">&#8250;</button>
+  <span class="slide-counter" id="counter">1 / 13</span>
+</div>
+<script>
+let current = 1;
+const total = document.querySelectorAll('.slide').length;
+const dotsContainer = document.getElementById('dots');
+const counter = document.getElementById('counter');
+for (let i = 1; i <= total; i++) { const dot = document.createElement('div'); dot.className = 'dot' + (i === 1 ? ' active' : ''); dot.onclick = () => goToSlide(i); dotsContainer.appendChild(dot); }
+function goToSlide(n) { const prev = document.querySelector('.slide.active'); const next = document.querySelector(`.slide[data-slide="${n}"]`); if (prev) prev.classList.remove('active'); if (next) { next.classList.add('active'); animateSlide(next); } current = n; updateNav(); }
+function changeSlide(dir) { let next = current + dir; if (next < 1) next = total; if (next > total) next = 1; goToSlide(next); }
+function updateNav() { document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i + 1 === current)); counter.textContent = current + ' / ' + total; }
+document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); changeSlide(1); } if (e.key === 'ArrowLeft') { e.preventDefault(); changeSlide(-1); } });
+let touchStartX = 0; document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; }); document.addEventListener('touchend', (e) => { const diff = touchStartX - e.changedTouches[0].clientX; if (Math.abs(diff) > 50) changeSlide(diff > 0 ? 1 : -1); });
+function animateSlide(slide) { slide.querySelectorAll('.reveal').forEach((el, i) => { el.style.transition = 'none'; el.style.opacity = '0'; el.style.transform = 'translateY(20px)'; el.offsetHeight; const delay = i * 0.08; el.style.transition = `opacity 0.35s ease ${delay}s, transform 0.35s ease ${delay}s`; el.style.opacity = '1'; el.style.transform = 'translateY(0px)'; }); animateSlideEffects(slide); }
+function animateSlideEffects(slide) { slide.querySelectorAll('.bar-fill:not(.fill-init)').forEach((bar, i) => { bar.classList.add('fill-init'); bar.style.width = '0%'; bar.style.transition = `width 0.5s ease ${i * 0.08}s`; bar.offsetHeight; bar.style.width = bar.dataset.width + '%'; }); }
+document.addEventListener('mousemove', (e) => { const spotlight = document.querySelector('.mouse-spotlight'); if (spotlight) spotlight.style.background = `radial-gradient(520px circle at ${e.clientX}px ${e.clientY}px, rgba(194,65,12,0.05), transparent 40%)`; });
+(function(){ let mouseX = window.innerWidth/2, mouseY = window.innerHeight/2; const cx = window.innerWidth/2, cy = window.innerHeight/2; document.addEventListener('mousemove', (e)=>{ mouseX=e.clientX; mouseY=e.clientY; }); (function tick(){ const ox=(mouseX-cx)/cx, oy=(mouseY-cy)/cy; document.querySelectorAll('.deco-shape').forEach(shape=>{ const speed=parseFloat(shape.dataset.speed)||0.03; shape.style.transform=`translate(${ox*speed*100}px, ${oy*speed*100}px)`; }); requestAnimationFrame(tick); })(); })();
+window.initParticles = function(canvas, options) { if (!canvas) return; const ctx = canvas.getContext('2d'); canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; const interactive = options.interactive !== false; const count = options.count || (interactive ? 48 : 18); let mx = -1000, my = -1000; const particles = Array.from({ length: count }, () => ({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3, size: Math.random() * 2.2 + 0.8, alpha: Math.random() * 0.28 + 0.08 })); if (interactive) { canvas.addEventListener('mousemove', (e) => { const rect = canvas.getBoundingClientRect(); mx = e.clientX - rect.left; my = e.clientY - rect.top; }); canvas.addEventListener('mouseleave', () => { mx = -1000; my = -1000; }); }
+(function animate(){ ctx.clearRect(0,0,canvas.width,canvas.height); particles.forEach(p=>{ if (interactive) { const dx = p.x - mx, dy = p.y - my, dist = Math.sqrt(dx*dx + dy*dy) || 1; if (dist < 120) { const force = (120 - dist) / 120 * 1.8; p.vx += (dx / dist) * force * 0.08; p.vy += (dy / dist) * force * 0.08; } } p.vx *= 0.98; p.vy *= 0.98; p.x += p.vx; p.y += p.vy; if (p.x < 0) p.x = canvas.width; if (p.x > canvas.width) p.x = 0; if (p.y < 0) p.y = canvas.height; if (p.y > canvas.height) p.y = 0; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fillStyle = `rgba(194,65,12,${p.alpha})`; ctx.fill(); }); requestAnimationFrame(animate); })(); };
+document.querySelectorAll('.particle-canvas').forEach(c => window.initParticles(c, { interactive: true, count: 48 }));
+document.querySelectorAll('.particle-canvas-ambient').forEach(c => window.initParticles(c, { interactive: false, count: 18 }));
+try { animateSlide(document.querySelector('.slide.active')); } catch(e) {}
+</script>
+</body>
+</html>
